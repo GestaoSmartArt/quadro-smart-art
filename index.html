@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f3b46">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https://script.google.com https://script.googleusercontent.com; manifest-src 'self'; base-uri 'none'; form-action 'none'">
+<title>Quadro Smart Art</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icone-192.png">
+<link rel="apple-touch-icon" href="icone-192.png">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="marca"><span class="logo" aria-hidden="true"></span><h1>Quadro</h1></div>
+  <div id="estado" class="estado" role="status" aria-live="polite"></div>
+  <button id="atualizar" class="icone" type="button" aria-label="Atualizar agora">&#x21bb;</button>
+  <button id="menu" class="icone" type="button" aria-label="Mais opções">&#x22EE;</button>
+</header>
+
+<nav id="abas" role="tablist" aria-label="Colunas do quadro"></nav>
+<main id="lista" aria-live="polite"></main>
+
+<section id="inicio" hidden>
+  <h2>Falta ligar ao Jarvis</h2>
+  <p>No computador, diga: <b>“Jarvis, conectar o quadro no celular”</b>. Vai aparecer um código (QR). Aponte a câmera do celular para ele e este app abre já ligado.</p>
+  <p class="suave">Este aviso some sozinho depois da ligação.</p>
+</section>
+
+<button id="mais" class="fab" type="button" aria-label="Anotar nova tarefa">+</button>
+
+<div id="fundo" hidden></div>
+<div id="folha" role="dialog" aria-modal="true" aria-labelledby="folha-titulo" hidden>
+  <div class="alca" aria-hidden="true"></div>
+  <h2 id="folha-titulo"></h2>
+  <div id="folha-corpo"></div>
+</div>
+<div id="aviso" role="status" aria-live="polite"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
