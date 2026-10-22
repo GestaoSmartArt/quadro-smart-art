@@ -13,14 +13,39 @@
 </head>
 <body>
 <header>
-  <div class="marca"><span class="logo" aria-hidden="true"></span><h1>Quadro</h1></div>
+  <div class="marca"><span class="logo" aria-hidden="true"></span><h1 id="titulo">Quadro</h1></div>
   <div id="estado" class="estado" role="status" aria-live="polite"></div>
   <button id="atualizar" class="icone" type="button" aria-label="Atualizar agora">&#x21bb;</button>
   <button id="menu" class="icone" type="button" aria-label="Mais opções">&#x22EE;</button>
 </header>
 
+<div id="vistas" role="tablist" aria-label="Quadro ou Jarvis">
+  <button id="v-quadro" class="vista" role="tab" type="button" aria-selected="true">Quadro</button>
+  <button id="v-jarvis" class="vista" role="tab" type="button" aria-selected="false">Jarvis</button>
+</div>
+
 <nav id="abas" role="tablist" aria-label="Colunas do quadro"></nav>
 <main id="lista" aria-live="polite"></main>
+
+<section id="vista-jarvis" hidden>
+  <div id="pin-tela" hidden>
+    <h2>PIN do Jarvis</h2>
+    <p class="suave">Digite o PIN de 6 dígitos que o computador mostrou. A conversa fecha sozinha depois de 30 minutos sem uso.</p>
+    <input id="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off" aria-label="PIN">
+    <button id="pin-ok" class="acao principal" type="button">Entrar</button>
+    <p id="pin-msg" class="suave" role="alert"></p>
+  </div>
+  <div id="chat-tela" hidden>
+    <div id="chips" aria-label="Perguntas rápidas"></div>
+    <div id="conversa" aria-live="polite"></div>
+    <div id="envio">
+      <textarea id="texto" rows="1" maxlength="300" placeholder="Pergunte ao Jarvis…" aria-label="Mensagem para o Jarvis"></textarea>
+      <button id="mic" class="icone" type="button" aria-label="Falar">&#x1F399;</button>
+      <button id="enviar" class="acao principal" type="button">Enviar</button>
+    </div>
+    <label class="ler"><input id="ler" type="checkbox"> Ler as respostas em voz alta</label>
+  </div>
+</section>
 
 <section id="inicio" hidden>
   <h2>Falta ligar ao Jarvis</h2>

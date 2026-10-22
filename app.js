@@ -62,6 +62,23 @@ const Logica = {
     const tempo = min < 60 ? min + ' min' : min < 1440 ? Math.round(min / 60) + ' h' : Math.round(min / 1440) + ' d';
     return { nivel: 'espera', texto: 'PC sem responder há ' + tempo };
   },
+  // ---- conversa com o Jarvis ----
+  CHIPS: ['O que tenho hoje?', 'Vai chover hoje?', 'Quadro de hoje', 'Contas da semana', 'Quem começa amanhã?', 'Resumo do WhatsApp'],
+  pinValido: p => /^[0-9]{4,8}$/.test(String(p || '')),
+  motivoPin(r) {
+    if (!r) return 'O computador não respondeu. Ele pode estar desligado ou sem internet.';
+    if (r.ok) return '';
+    if (r.motivo === 'errado') return 'PIN errado. Restam ' + r.restantes + ' tentativa(s).';
+    if (r.motivo === 'bloqueado') return 'Muitas tentativas. Espere ' + r.minutos + ' min.';
+    if (r.motivo === 'sem_pin') return 'Ainda não existe PIN. No computador, diga: "Jarvis, criar um PIN novo no celular".';
+    return 'Não consegui entrar.';
+  },
+  // coloca as respostas do PC nas bolhas que esperavam (casa pelo id da mensagem)
+  mesclar(chat, respostas) {
+    const por = new Map((respostas || []).map(r => [r.id, r]));
+    return chat.map(b => { const r = b.estado === 'espera' && por.get(b.id); return r && r.tipo === 'texto' ? { ...b, texto: String(r.texto || ''), estado: 'ok', sessaoInvalida: !!r.sessaoInvalida } : b; });
+  },
+  sessaoViva: s => !!(s && s.codigo && s.ate > Date.now()),
   lerHash(hash) {                                                  // "#u=<endereço>&t=<senha>" -> { u, t } ou null
     const p = new URLSearchParams(String(hash || '').replace(/^#/, '')), u = p.get('u'), t = p.get('t');
     return u && t && /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(u) && /^[A-Fa-f0-9]{32,80}$/.test(t) ? { u, t } : null;
@@ -74,7 +91,11 @@ if (typeof document !== 'undefined') (function () {
   const $ = id => document.getElementById(id);
   const guardar = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* modo privado: funciona sem lembrar */ } };
   const ler = (k, p) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : p; } catch (e) { return p; } };
-  const E = { cfg: ler('qc.cfg', null), snap: ler('qc.snap', null), pend: ler('qc.pend', []), aplicadas: ler('qc.aplicadas', []), pcEm: ler('qc.pcEm', 0), aba: ler('qc.aba', 'hoje'), offset: 0, ocupado: false, instalar: null, ultimoOk: 0, falhou: false };
+  const E = { cfg: ler('qc.cfg', null), snap: ler('qc.snap', null), pend: ler('qc.pend', []), aplicadas: ler('qc.aplicadas', []), pcEm: ler('qc.pcEm', 0), aba: ler('qc.aba', 'hoje'), offset: 0, ocupado: false, instalar: null, ultimoOk: 0, falhou: false,
+    vista: ler('qc.vista', 'quadro'), chat: [], ouvindo: false, ocupadoChat: false };
+  const lerSessao = () => { try { return JSON.parse(sessionStorage.getItem('qc.sessao') || 'null'); } catch (e) { return null; } };
+  const gravarSessao = s => { try { if (s) sessionStorage.setItem('qc.sessao', JSON.stringify(s)); else sessionStorage.removeItem('qc.sessao'); } catch (e) { /* sem sessionStorage: pede o PIN a cada abertura */ } };
+  E.sessao = lerSessao();                                          // o PIN nunca é guardado; só o código da sessão (30 min), que some ao fechar a aba
 
   // pareamento pelo QR: guarda e limpa o endereço do histórico
   const par = Logica.lerHash(location.hash);
@@ -84,13 +105,13 @@ if (typeof document !== 'undefined') (function () {
   const vib = () => { try { navigator.vibrate && navigator.vibrate(12); } catch (e) { /* sem vibração */ } };
 
   // ---------- rede ----------
-  async function pedir(opcoes) {
+  async function pedir(opcoes, extra) {
     if (!E.cfg) return null;
     try {
       const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 20000);
       const r = opcoes
         ? await fetch(E.cfg.u, { method: 'POST', body: JSON.stringify({ t: E.cfg.t, ...opcoes }), headers: { 'Content-Type': 'text/plain;charset=utf-8' }, signal: ctl.signal, cache: 'no-store' })
-        : await fetch(E.cfg.u + '?t=' + encodeURIComponent(E.cfg.t) + '&de=cel&_=' + Date.now(), { signal: ctl.signal, cache: 'no-store' });
+        : await fetch(E.cfg.u + '?t=' + encodeURIComponent(E.cfg.t) + '&de=cel' + (extra || '') + '&_=' + Date.now(), { signal: ctl.signal, cache: 'no-store' });
       clearTimeout(t);
       const j = await r.json();
       if (j && j.erro === 'nao_autorizado') { E.cfg = null; localStorage.removeItem('qc.cfg'); aviso('A senha do quadro mudou. Gere o código de novo no Jarvis.'); desenhar(); return null; }
@@ -122,13 +143,17 @@ if (typeof document !== 'undefined') (function () {
 
   // ---------- tela ----------
   function desenhar() {
-    $('inicio').hidden = !!E.cfg; $('mais').hidden = !E.cfg; $('abas').hidden = !E.cfg; $('lista').hidden = !E.cfg;
+    const jv = !!E.cfg && E.vista === 'jarvis';
+    $('inicio').hidden = !!E.cfg; $('mais').hidden = !E.cfg || jv; $('abas').hidden = !E.cfg || jv; $('lista').hidden = !E.cfg || jv;
+    $('vistas').hidden = !E.cfg; $('vista-jarvis').hidden = !jv; $('titulo').textContent = jv ? 'Jarvis' : 'Quadro';
+    $('v-quadro').setAttribute('aria-selected', String(!jv)); $('v-jarvis').setAttribute('aria-selected', String(jv));
     const est = $('estado');
     if (!E.cfg) { est.className = 'estado off'; est.innerHTML = ''; return; }
     const s = Logica.situacao(E.pcEm, Date.now() + E.offset), n = E.pend.length;
     const semNet = E.falhou && Date.now() - E.ultimoOk > 45000;
     est.className = 'estado ' + (semNet ? 'off' : s.nivel);
     est.textContent = ''; const b = document.createElement('b'); est.append(b, (semNet ? 'Sem internet' : s.texto) + (n ? ' · ' + n + ' na fila' : ''));
+    if (jv) { desenharJarvis(); return; }
     const cols = Logica.visao(E.snap, E.pend, E.aplicadas);
     const abas = $('abas'); abas.textContent = '';
     for (const c of Logica.COLUNAS) {
@@ -193,10 +218,85 @@ if (typeof document !== 'undefined') (function () {
       const l = grupo(corpo, 'App');
       if (E.instalar) botao(l, '⬇ Instalar no celular', async () => { E.instalar.prompt(); try { await E.instalar.userChoice; } catch (e) { /* */ } E.instalar = null; });
       botao(l, '⟳ Atualizar agora', sincronizar);
-      botao(l, 'Desconectar este celular', () => { if (confirm('Desconectar? Para voltar, é preciso gerar o código no Jarvis de novo.')) { ['qc.cfg', 'qc.snap', 'qc.pend', 'qc.aplicadas', 'qc.pcEm'].forEach(k => localStorage.removeItem(k)); E.cfg = null; E.snap = null; E.pend = []; desenhar(); } }, 'perigo');
+      if (Logica.sessaoViva(E.sessao)) botao(l, 'Sair da conversa do Jarvis', () => { E.sessao = null; E.chat = []; gravarSessao(null); desenhar(); });
+      botao(l, 'Desconectar este celular', () => { if (confirm('Desconectar? Para voltar, é preciso gerar o código no Jarvis de novo.')) { ['qc.cfg', 'qc.snap', 'qc.pend', 'qc.aplicadas', 'qc.pcEm'].forEach(k => localStorage.removeItem(k)); E.cfg = null; E.snap = null; E.pend = []; E.sessao = null; E.chat = []; gravarSessao(null); desenhar(); } }, 'perigo');
       const p = document.createElement('p'); p.className = 'suave'; p.textContent = 'Os dados ficam no seu computador e na sua conta do Google. Este app só guarda uma cópia para consulta.'; corpo.append(p);
     });
   }
+
+  // ---------- conversa com o Jarvis ----------
+  const voz = () => { try { return localStorage.getItem('qc.ler') === '1'; } catch (e) { return false; } };
+  function falar(txt) {
+    try { if (!voz() || !window.speechSynthesis) return; speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(String(txt).slice(0, 600)); u.lang = 'pt-BR'; speechSynthesis.speak(u); } catch (e) { /* sem voz no aparelho */ }
+  }
+  function desenharJarvis() {
+    const vivo = Logica.sessaoViva(E.sessao);
+    $('pin-tela').hidden = vivo; $('chat-tela').hidden = !vivo;
+    if (!vivo) { E.sessao = null; gravarSessao(null); return; }
+    const chips = $('chips'); if (!chips.childNodes.length) for (const c of Logica.CHIPS) { const b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.textContent = c; b.onclick = () => perguntar(c); chips.append(b); }
+    $('ler').checked = voz(); $('mic').hidden = !(window.SpeechRecognition || window.webkitSpeechRecognition);
+    const conv = $('conversa'); conv.textContent = '';
+    if (!E.chat.length) { const v = document.createElement('div'); v.className = 'vazio'; v.textContent = 'Pergunte algo ou toque numa sugestão. Eu consulto e anoto; o resto fica no computador.'; conv.append(v); }
+    for (const b of E.chat) {
+      const d = document.createElement('div'); d.className = 'bolha ' + b.de + (b.estado === 'espera' ? ' espera' : '');
+      const q = document.createElement('span'); q.className = 'quem'; q.textContent = b.de === 'eu' ? 'Você' : 'Jarvis'; d.append(q, document.createTextNode(b.texto)); conv.append(d);
+    }
+    window.scrollTo(0, document.body.scrollHeight);
+  }
+  async function postar(id, msg) { const j = await pedir({ a: 'msg', msgs: [{ id, ...msg }] }); return !!j; }
+  async function esperar(id, limite) {                             // o PC consulta de 3 em 3 s com a conversa aberta; aqui olhamos a cada 2,5 s
+    const t0 = Date.now();
+    while (Date.now() - t0 < limite) {
+      await new Promise(r => setTimeout(r, 2500));
+      const j = await pedir(null, '&chat=1'); const r = j && (j.respostas || []).find(x => x.id === id); if (r) return r;
+    }
+    return null;
+  }
+  async function entrarPin() {
+    const pin = $('pin').value.trim(), msg = $('pin-msg');
+    if (!Logica.pinValido(pin)) { msg.textContent = 'O PIN tem 4 a 8 números.'; return; }
+    if (E.ocupadoChat) return; E.ocupadoChat = true; msg.textContent = 'Conferindo com o computador…'; $('pin-ok').disabled = true;
+    try {
+      const id = Logica.novoId(); let r = null;
+      if (await postar(id, { tipo: 'pin', pin })) r = await esperar(id, 45000); else msg.textContent = 'Sem internet.';
+      $('pin').value = '';
+      if (r && r.ok && r.codigo) { E.sessao = { codigo: r.codigo, ate: Date.now() + (r.minutos || 30) * 60000 }; gravarSessao(E.sessao); msg.textContent = ''; }
+      else if (msg.textContent !== 'Sem internet.') msg.textContent = Logica.motivoPin(r);
+    } finally { E.ocupadoChat = false; $('pin-ok').disabled = false; desenhar(); }
+  }
+  async function perguntar(texto) {
+    texto = String(texto || '').trim(); if (!texto || E.ocupadoChat) return;
+    if (!Logica.sessaoViva(E.sessao)) { E.sessao = null; gravarSessao(null); desenhar(); return; }
+    E.ocupadoChat = true; $('texto').value = '';
+    const id = Logica.novoId();
+    E.chat.push({ id: 'u' + id, de: 'eu', texto }, { id, de: 'jarvis', texto: 'Consultando o computador…', estado: 'espera' }); desenhar();
+    let final = '';
+    try {
+      if (!(await postar(id, { tipo: 'texto', texto: texto.slice(0, 300), sessao: E.sessao.codigo }))) final = 'Sem internet. Tente de novo.';
+      else {
+        const r = await esperar(id, 50000);
+        if (!r) final = 'O computador não respondeu. Ele pode estar desligado; o quadro continua funcionando na outra aba.';
+        else { E.chat = Logica.mesclar(E.chat, [r]); final = r.texto || ''; if (r.sessaoInvalida) { E.sessao = null; gravarSessao(null); } else { E.sessao.ate = Date.now() + 30 * 60000; gravarSessao(E.sessao); } }
+      }
+    } finally {
+      E.chat = E.chat.map(b => (b.id === id && b.estado === 'espera' ? { ...b, texto: final, estado: 'ok' } : b));
+      E.ocupadoChat = false; desenhar(); falar(final);
+    }
+  }
+  $('v-quadro').onclick = () => { E.vista = 'quadro'; guardar('qc.vista', 'quadro'); desenhar(); };
+  $('v-jarvis').onclick = () => { E.vista = 'jarvis'; guardar('qc.vista', 'jarvis'); desenhar(); };
+  $('pin-ok').onclick = entrarPin; $('pin').addEventListener('keydown', e => { if (e.key === 'Enter') entrarPin(); });
+  $('enviar').onclick = () => perguntar($('texto').value);
+  $('texto').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); perguntar($('texto').value); } });
+  $('ler').onchange = e => { try { localStorage.setItem('qc.ler', e.target.checked ? '1' : '0'); } catch (x) { /* sem armazenamento */ } if (!e.target.checked && window.speechSynthesis) speechSynthesis.cancel(); };
+  $('mic').onclick = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) return;
+    if (E.ouvindo && E.rec) { E.rec.stop(); return; }
+    const rec = new SR(); E.rec = rec; rec.lang = 'pt-BR'; rec.interimResults = false; rec.maxAlternatives = 1;
+    rec.onresult = ev => { const t = ev.results[0] && ev.results[0][0] && ev.results[0][0].transcript; if (t) { $('texto').value = t; perguntar(t); } };
+    rec.onend = () => { E.ouvindo = false; $('mic').classList.remove('ouvindo'); }; rec.onerror = () => { E.ouvindo = false; $('mic').classList.remove('ouvindo'); aviso('Não consegui ouvir. Tente de novo ou escreva.'); };
+    try { rec.start(); E.ouvindo = true; $('mic').classList.add('ouvindo'); } catch (x) { aviso('O microfone não está disponível.'); }
+  };
 
   $('mais').onclick = novo; $('menu').onclick = menu; $('atualizar').onclick = () => { aviso('Atualizando…'); sincronizar(); };
   window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); E.instalar = e; });

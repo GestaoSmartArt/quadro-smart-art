@@ -67,3 +67,27 @@ textarea { width: 100%; min-height: 96px; resize: vertical; border: 1px solid va
 [hidden] { display: none !important; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 @media (min-width: 720px) { #lista, #abas, .limite { max-width: 640px; margin-left: auto; margin-right: auto; } #folha { max-width: 560px; margin: 0 auto; border-radius: 18px; bottom: 16px; } }
+
+/* ---- vistas e conversa com o Jarvis ---- */
+#vistas { display: flex; gap: 6px; padding: 10px 16px 0; }
+.vista { flex: 1; min-height: 44px; border: 1px solid var(--linha); border-radius: 12px; background: var(--cartao); color: var(--texto); cursor: pointer; font-weight: 600; }
+.vista[aria-selected="true"] { background: var(--cabeca); color: var(--sobre-cabeca); border-color: var(--cabeca); }
+#vista-jarvis { padding: 8px 16px; }
+#pin-tela { margin: 20px 0; padding: 18px; border: 1px dashed var(--linha); border-radius: 14px; background: var(--cartao); }
+#pin-tela h2 { margin: 0 0 8px; font-size: 18px; }
+#pin { width: 100%; min-height: 52px; margin: 10px 0; padding: 0 14px; border: 1px solid var(--linha); border-radius: 12px; background: var(--fundo); color: var(--texto); font: 700 24px ui-monospace, monospace; letter-spacing: 8px; text-align: center; }
+#chips { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 8px; scrollbar-width: none; }
+#chips::-webkit-scrollbar { display: none; }
+.chip { flex: 0 0 auto; min-height: 40px; padding: 0 14px; border: 1px solid var(--linha); border-radius: 20px; background: var(--cartao); color: var(--texto); cursor: pointer; }
+#conversa { display: flex; flex-direction: column; gap: 8px; padding-bottom: 150px; min-height: 40vh; }
+.bolha { max-width: 88%; padding: 10px 13px; border-radius: 16px; white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: var(--sombra); }
+.bolha.eu { align-self: flex-end; background: var(--acento); color: #fff; border-bottom-right-radius: 4px; }
+.bolha.jarvis { align-self: flex-start; background: var(--cartao); border: 1px solid var(--linha); border-bottom-left-radius: 4px; }
+.bolha.espera { opacity: .7; font-style: italic; }
+.bolha .quem { display: block; font-size: 11px; opacity: .65; margin-bottom: 2px; }
+#envio { position: fixed; left: 0; right: 0; bottom: 0; z-index: 4; display: flex; align-items: flex-end; gap: 6px; padding: 8px 12px calc(34px + env(safe-area-inset-bottom)); background: var(--fundo); border-top: 1px solid var(--linha); }
+#texto { flex: 1; min-height: 48px; max-height: 120px; resize: none; border: 1px solid var(--linha); border-radius: 14px; background: var(--cartao); color: var(--texto); font: inherit; padding: 12px; }
+#envio .icone { color: var(--texto); border: 1px solid var(--linha); background: var(--cartao); }
+#envio .icone.ouvindo { background: var(--erro); color: #fff; }
+.ler { position: fixed; left: 16px; bottom: calc(8px + env(safe-area-inset-bottom)); z-index: 5; font-size: 13px; color: var(--suave); }
+@media (min-width: 720px) { #vista-jarvis, #vistas { max-width: 640px; margin-left: auto; margin-right: auto; } #envio { left: 50%; right: auto; width: 640px; transform: translateX(-50%); } }
