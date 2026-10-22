@@ -100,3 +100,19 @@ textarea { width: 100%; min-height: 96px; resize: vertical; border: 1px solid va
 .ler { position: fixed; left: 16px; bottom: calc(8px + env(safe-area-inset-bottom)); z-index: 5; font-size: 12px; color: var(--suave); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 @media (min-width: 720px) { #lista, #abas, .limite, #vista-jarvis, #vistas { max-width: 640px; margin-left: auto; margin-right: auto; } #folha { max-width: 560px; margin: 0 auto; border-radius: 18px; bottom: 16px; border-bottom: 1px solid var(--linha); } #envio { left: 50%; right: auto; width: 640px; transform: translateX(-50%); } }
+
+/* ---- núcleo do Jarvis e modo voz (conversa falada, estilo assistente de voz) ---- */
+.orbe { display: block; width: 100%; padding: 0; margin: 0 0 4px; border: 0; background: transparent; color: var(--ciano); cursor: pointer; }
+#nucleo { display: block; width: 100%; height: 190px; }
+#orbe-rotulo { display: block; text-align: center; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--ciano); opacity: .8; padding-bottom: 4px; }
+#modo-voz { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; padding: calc(14px + env(safe-area-inset-top)) 16px calc(18px + env(safe-area-inset-bottom)); background: radial-gradient(ellipse at 50% 38%, #0b2640 0%, #02060d 66%); }
+.voz-topo { width: 100%; text-align: center; }
+.voz-marca { font-size: 13px; letter-spacing: .3em; color: var(--ciano); text-shadow: 0 0 10px rgba(63, 224, 255, .5); }
+.voz-nucleo { flex: 1 1 auto; width: 100%; min-height: 0; max-width: 560px; padding: 0; border: 0; background: transparent; cursor: pointer; }
+#nucleo-voz { display: block; width: 100%; height: 100%; }
+.voz-estado { margin: 0; font-size: 13px; letter-spacing: .22em; text-transform: uppercase; color: var(--ciano); text-align: center; }
+.voz-fala { margin: 8px 0 0; min-height: 24px; max-width: 520px; text-align: center; color: var(--suave); font-size: 15px; overflow-wrap: anywhere; }
+.voz-resposta { margin: 8px 0 0; max-height: 22vh; overflow-y: auto; max-width: 520px; text-align: center; color: var(--texto); font-size: 15px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.voz-controles { display: flex; align-items: center; gap: 16px; margin-top: 14px; }
+.icone.grande { width: 56px; height: 56px; border: 1px solid var(--linha); border-radius: 50%; font-size: 26px; }
+.icone.grande[aria-pressed="true"] { background: var(--erro); color: #fff; border-color: var(--erro); }

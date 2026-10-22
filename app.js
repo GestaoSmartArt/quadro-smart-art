@@ -145,6 +145,7 @@ if (typeof document !== 'undefined') (function () {
   // ---------- tela ----------
   function desenhar() {
     const jv = !!E.cfg && E.vista === 'jarvis';
+    if (E.nucleo) { if (jv && Logica.sessaoViva(E.sessao)) E.nucleo.iniciar(); else E.nucleo.parar(); }        // o núcleo só anima na aba Jarvis, com a conversa aberta
     $('inicio').hidden = !!E.cfg; $('mais').hidden = !E.cfg || jv; $('abas').hidden = !E.cfg || jv; $('lista').hidden = !E.cfg || jv;
     $('vistas').hidden = !E.cfg; $('vista-jarvis').hidden = !jv; $('titulo').textContent = jv ? 'Jarvis' : 'Quadro';
     $('v-quadro').setAttribute('aria-selected', String(!jv)); $('v-jarvis').setAttribute('aria-selected', String(jv));
@@ -272,38 +273,48 @@ if (typeof document !== 'undefined') (function () {
       else if (msg.textContent !== 'Sem internet.') msg.textContent = Logica.motivoPin(r);
     } finally { E.ocupadoChat = false; $('pin-ok').disabled = false; desenhar(); }
   }
-  async function perguntar(texto) {
-    texto = String(texto || '').trim(); if (!texto || E.ocupadoChat) return;
-    if (!Logica.sessaoViva(E.sessao)) { E.sessao = null; gravarSessao(null); desenhar(); return; }
-    E.ocupadoChat = true; $('texto').value = '';
+  // uma troca com o Jarvis (texto ou voz): manda, espera a resposta e atualiza a conversa. Devolve { id, texto, respondeu }.
+  async function trocar(texto) {
     const id = Logica.novoId();
     E.chat.push({ id: 'u' + id, de: 'eu', texto }, { id, de: 'jarvis', texto: 'Consultando o computador…', estado: 'espera' }); desenhar();
-    let final = '', respondeuTexto = false;
+    let final = '', respondeu = false;
     try {
       if (!(await postar(id, { tipo: 'texto', texto: texto.slice(0, 300), sessao: E.sessao.codigo }))) final = 'Sem internet. Tente de novo.';
       else {
         const r = await esperar(id, 50000);
         if (!r) final = 'O computador não respondeu. Ele pode estar desligado; o quadro continua funcionando na outra aba.';
-        else { respondeuTexto = !r.sessaoInvalida && !!r.texto; E.chat = Logica.mesclar(E.chat, [r]); final = r.texto || ''; if (r.sessaoInvalida) { E.sessao = null; gravarSessao(null); } else { E.sessao.ate = Date.now() + 30 * 60000; gravarSessao(E.sessao); } }
+        else { respondeu = !r.sessaoInvalida && !!r.texto; E.chat = Logica.mesclar(E.chat, [r]); final = r.texto || ''; if (r.sessaoInvalida) { E.sessao = null; gravarSessao(null); } else { E.sessao.ate = Date.now() + 30 * 60000; gravarSessao(E.sessao); } }
       }
     } finally {
-      E.chat = E.chat.map(b => (b.id === id ? { ...b, texto: b.estado === 'espera' ? final : b.texto, estado: 'ok', audio: respondeuTexto ? 'esperando' : 'sem' } : b));
-      E.ocupadoChat = false; desenhar();
-      if (respondeuTexto) buscarVoz(id, final); else falar(final);
+      E.chat = E.chat.map(b => (b.id === id ? { ...b, texto: b.estado === 'espera' ? final : b.texto, estado: 'ok', audio: respondeu ? 'esperando' : 'sem' } : b));
     }
+    return { id, texto: final, respondeu };
   }
-  // Voz do Jarvis: o computador gera o áudio com a voz de sempre e o manda pela ponte (alguns segundos depois do texto). Sem áudio a tempo, cai na voz do aparelho (só se "falar" estiver ligado).
-  async function buscarVoz(id, texto) {
-    const t0 = Date.now(); let ok = false;
-    while (Date.now() - t0 < 45000 && E.cfg) {
-      await new Promise(r => setTimeout(r, 2000));
+  async function perguntar(texto) {
+    texto = String(texto || '').trim(); if (!texto || E.ocupadoChat) return;
+    if (!Logica.sessaoViva(E.sessao)) { E.sessao = null; gravarSessao(null); desenhar(); return; }
+    E.ocupadoChat = true; $('texto').value = '';
+    const r = await trocar(texto);
+    E.ocupadoChat = false; desenhar();
+    if (r.respondeu) buscarVoz(r.id, r.texto); else falar(r.texto);
+  }
+  // espera o áudio da resposta chegar pela ponte e o deixa pronto para tocar (true) ou desiste (false)
+  async function esperarAudio(id, limite) {
+    const t0 = Date.now();
+    while (Date.now() - t0 < limite && E.cfg) {
+      await new Promise(r => setTimeout(r, 1500));
       const j = await pedir(null, '&chat=1');
       if (j && (j.audios || []).includes(id)) {
         const a = await pedir(null, '&a=audio&id=' + encodeURIComponent(id));
-        if (a && a.b64) { E.audios[id] = URL.createObjectURL(new Blob([Logica.bytesDeBase64(a.b64)], { type: a.mime || 'audio/mpeg' })); ok = true; }
-        break;
+        if (a && a.b64) { E.audios[id] = URL.createObjectURL(new Blob([Logica.bytesDeBase64(a.b64)], { type: a.mime || 'audio/mpeg' })); return true; }
+        return false;
       }
     }
+    return false;
+  }
+  // Voz do Jarvis: o computador gera o áudio com a voz de sempre e o manda pela ponte (alguns segundos depois do texto). Sem áudio a tempo, cai na voz do aparelho (só se "falar" estiver ligado).
+  async function buscarVoz(id, texto) {
+    const ok = await esperarAudio(id, 45000);
     E.chat = E.chat.map(b => (b.id === id ? { ...b, audio: ok ? 'pronto' : 'sem' } : b));
     if (E.vista === 'jarvis') desenhar();
     if (ok && voz()) tocar(id); else if (!ok) falar(texto);
@@ -318,6 +329,91 @@ if (typeof document !== 'undefined') (function () {
       p.play().catch(() => { E.tocando = null; desenhar(); aviso('Toque em "Ouvir a voz do Jarvis" para escutar.'); });
     } catch (e) { E.tocando = null; }
   }
+  // ---------- modo voz: conversa falada em tela cheia, com o núcleo do Jarvis no centro (ouvindo · pensando · falando), como nos assistentes de voz ----------
+  const SRV = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const V = { ativo: false, fase: 'espera', mudo: false, rec: null, semFala: 0, bloqueado: false, pararFala: null };
+  const ROT = { ouvindo: 'Ouvindo…', pensando: 'Pensando…', falando: 'Falando…', pausado: 'Toque no núcleo para falar', espera: 'Toque no núcleo para falar' };
+  const faseVoz = (f, txt) => { V.fase = f; $('voz-estado').textContent = txt || ROT[f]; };
+  function pararSom() { try { if (E.player) { E.player.pause(); E.player = null; } E.tocando = null; if (window.speechSynthesis) speechSynthesis.cancel(); } catch (e) { /* sem som */ } }
+  function estadoNucleo() {
+    const e = V.ativo ? ({ ouvindo: 'ouvindo', pensando: 'pensando', falando: 'falando' }[V.fase] || 'espera') : (E.ocupadoChat ? 'pensando' : E.tocando ? 'falando' : 'espera');
+    const r = $('orbe-rotulo'), t = V.ativo ? null : (e === 'pensando' ? 'Consultando o computador…' : e === 'falando' ? 'Falando…' : 'Toque no núcleo para conversar por voz'); if (t && r.textContent !== t) r.textContent = t;
+    return e;
+  }
+  function abrirVoz() {
+    if (!SRV) { aviso('Este navegador não tem reconhecimento de voz. Use o Chrome do Android.'); return; }
+    if (!Logica.sessaoViva(E.sessao)) { desenhar(); return; }
+    Object.assign(V, { ativo: true, mudo: false, semFala: 0, bloqueado: false, pararFala: null }); $('voz-mudo').setAttribute('aria-pressed', 'false');
+    $('voz-fala').textContent = ''; $('voz-resposta').textContent = ''; $('modo-voz').hidden = false; document.body.style.overflow = 'hidden';
+    if (E.nucleoVoz) E.nucleoVoz.iniciar();
+    ouvirVoz();
+  }
+  function fecharVoz() {
+    V.ativo = false; V.fase = 'espera'; try { if (V.rec) V.rec.abort(); } catch (e) { /* já parou */ }
+    pararSom(); $('modo-voz').hidden = true; document.body.style.overflow = ''; if (E.nucleoVoz) E.nucleoVoz.parar(); desenhar();
+  }
+  function ouvirVoz() {
+    if (!V.ativo) return;
+    if (V.mudo) { faseVoz('pausado', 'Microfone silenciado'); return; }
+    faseVoz('ouvindo'); $('voz-fala').textContent = '';
+    let final = '', rec; try { rec = new SRV(); } catch (e) { faseVoz('pausado', 'Microfone indisponível'); return; }
+    V.rec = rec; rec.lang = 'pt-BR'; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
+    rec.onresult = ev => { let t = ''; for (let i = 0; i < ev.results.length; i++) t += ev.results[i][0].transcript; $('voz-fala').textContent = t; if (ev.results[ev.results.length - 1].isFinal) final = t; };
+    rec.onerror = ev => { if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') { V.bloqueado = true; faseVoz('pausado', 'Permita o microfone nas configurações do site'); } };
+    rec.onend = () => {
+      if (!V.ativo || V.fase !== 'ouvindo' || V.rec !== rec || V.bloqueado) return;
+      const t = final.trim();
+      if (t) { V.semFala = 0; responderVoz(t); } else if (++V.semFala >= 3) faseVoz('pausado'); else setTimeout(ouvirVoz, 250);
+    };
+    try { rec.start(); } catch (e) { faseVoz('pausado'); }
+  }
+  async function responderVoz(texto) {
+    faseVoz('pensando'); $('voz-fala').textContent = texto; $('voz-resposta').textContent = '';
+    E.ocupadoChat = true; const r = await trocar(texto); E.ocupadoChat = false;
+    if (!V.ativo) return;
+    if (!Logica.sessaoViva(E.sessao)) { fecharVoz(); aviso('A sessão expirou. Digite o PIN de novo.'); return; }
+    $('voz-resposta').textContent = r.texto;
+    if (!r.respondeu) { faseVoz('pausado', 'Sem resposta do computador'); return; }
+    faseVoz('pensando', 'Gerando a voz…');
+    const ok = await esperarAudio(r.id, 30000);
+    if (!V.ativo) return;
+    E.chat = E.chat.map(b => (b.id === r.id ? { ...b, audio: ok ? 'pronto' : 'sem' } : b));
+    if (ok) await tocarEEsperar(r.id); else await falarAparelho(r.texto);
+    if (V.ativo) ouvirVoz();                                       // a conversa segue sozinha: depois que o Jarvis fala, ele volta a ouvir
+  }
+  function tocarEEsperar(id) {
+    return new Promise(res => {
+      try {
+        pararSom(); const p = new Audio(E.audios[id]); E.player = p; E.tocando = id; faseVoz('falando');
+        const fim = () => { if (E.tocando === id) { E.tocando = null; E.player = null; } V.pararFala = null; res(); };
+        V.pararFala = () => { pararSom(); fim(); }; p.onended = p.onerror = fim;
+        p.play().catch(() => { aviso('O navegador bloqueou o som. Toque no núcleo.'); fim(); });
+      } catch (e) { res(); }
+    });
+  }
+  function falarAparelho(txt) {
+    return new Promise(res => {
+      try {
+        if (!window.speechSynthesis) return res(); faseVoz('falando');
+        const u = new SpeechSynthesisUtterance(String(txt).slice(0, 600)); u.lang = 'pt-BR'; const fim = () => { V.pararFala = null; res(); };
+        V.pararFala = () => { pararSom(); fim(); }; u.onend = u.onerror = fim; speechSynthesis.cancel(); speechSynthesis.speak(u);
+      } catch (e) { res(); }
+    });
+  }
+  $('orbe').onclick = abrirVoz; $('voz-fim').onclick = fecharVoz;
+  $('voz-nucleo').onclick = () => {                                // tocar no núcleo: interrompe a fala, envia o que já foi dito ou volta a ouvir
+    if (!V.ativo) return;
+    if (V.fase === 'falando' && V.pararFala) V.pararFala();
+    else if (V.fase === 'ouvindo') { try { V.rec.stop(); } catch (e) { /* já parou */ } }
+    else if (V.fase === 'pausado') { V.semFala = 0; V.bloqueado = false; V.mudo = false; $('voz-mudo').setAttribute('aria-pressed', 'false'); ouvirVoz(); }
+  };
+  $('voz-mudo').onclick = () => {
+    V.mudo = !V.mudo; $('voz-mudo').setAttribute('aria-pressed', String(V.mudo));
+    if (V.mudo) { if (V.fase === 'ouvindo') { faseVoz('pausado', 'Microfone silenciado'); try { V.rec.abort(); } catch (e) { /* já parou */ } } }       // pensando/falando seguem; ao terminar, não volta a ouvir
+    else if (V.fase === 'pausado') ouvirVoz();
+  };
+  if (window.Nucleo) { E.nucleo = Nucleo.criar($('nucleo'), estadoNucleo); E.nucleoVoz = Nucleo.criar($('nucleo-voz'), estadoNucleo); }
+
   $('v-quadro').onclick = () => { E.vista = 'quadro'; guardar('qc.vista', 'quadro'); desenhar(); };
   $('v-jarvis').onclick = () => { E.vista = 'jarvis'; guardar('qc.vista', 'jarvis'); desenhar(); sincronizar(); };       // já acorda o PC (conversa aberta) enquanto a pessoa digita o PIN
   $('pin-ok').onclick = entrarPin; $('pin').addEventListener('keydown', e => { if (e.key === 'Enter') entrarPin(); });
