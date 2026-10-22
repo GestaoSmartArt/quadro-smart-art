@@ -131,7 +131,7 @@ if (typeof document !== 'undefined') (function () {
     if (E.ocupado || !E.cfg) return; E.ocupado = true;
     try {
       const enviar = E.pend.filter(p => !E.aplicadas.includes(p.id));
-      const j = enviar.length ? await pedir({ a: 'ops', ops: enviar.map(p => ({ id: p.id, acao: p.acao })) }) : await pedir(null);
+      const j = enviar.length ? await pedir({ a: 'ops', ops: enviar.map(p => ({ id: p.id, acao: p.acao })) }) : await pedir(null, E.vista === 'jarvis' ? '&chat=1' : '');      // com a aba Jarvis aberta, avisa o PC para olhar de 3 em 3 s
       if (j) receber(j); else E.falhou = true;
     } finally { E.ocupado = false; desenhar(); }
   }
@@ -318,7 +318,7 @@ if (typeof document !== 'undefined') (function () {
     } catch (e) { E.tocando = null; }
   }
   $('v-quadro').onclick = () => { E.vista = 'quadro'; guardar('qc.vista', 'quadro'); desenhar(); };
-  $('v-jarvis').onclick = () => { E.vista = 'jarvis'; guardar('qc.vista', 'jarvis'); desenhar(); };
+  $('v-jarvis').onclick = () => { E.vista = 'jarvis'; guardar('qc.vista', 'jarvis'); desenhar(); sincronizar(); };       // já acorda o PC (conversa aberta) enquanto a pessoa digita o PIN
   $('pin-ok').onclick = entrarPin; $('pin').addEventListener('keydown', e => { if (e.key === 'Enter') entrarPin(); });
   $('enviar').onclick = () => perguntar($('texto').value);
   $('texto').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); perguntar($('texto').value); } });
