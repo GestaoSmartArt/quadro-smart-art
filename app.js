@@ -94,9 +94,9 @@ if (typeof document !== 'undefined') (function () {
   const ler = (k, p) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : p; } catch (e) { return p; } };
   const E = { cfg: ler('qc.cfg', null), snap: ler('qc.snap', null), pend: ler('qc.pend', []), aplicadas: ler('qc.aplicadas', []), pcEm: ler('qc.pcEm', 0), aba: ler('qc.aba', 'hoje'), offset: 0, ocupado: false, instalar: null, ultimoOk: 0, falhou: false,
     vista: ler('qc.vista', 'quadro'), chat: [], ouvindo: false, ocupadoChat: false, audios: {}, tocando: null, player: null, aberto: null };
-  const lerSessao = () => { try { return JSON.parse(sessionStorage.getItem('qc.sessao') || 'null'); } catch (e) { return null; } };
-  const gravarSessao = s => { try { if (s) sessionStorage.setItem('qc.sessao', JSON.stringify(s)); else sessionStorage.removeItem('qc.sessao'); } catch (e) { /* sem sessionStorage: pede o PIN a cada abertura */ } };
-  E.sessao = lerSessao();                                          // o PIN nunca é guardado; só o código da sessão (30 min), que some ao fechar a aba
+  const lerSessao = () => { try { return JSON.parse(localStorage.getItem('qc.sessao') || 'null'); } catch (e) { return null; } };
+  const gravarSessao = s => { try { if (s) localStorage.setItem('qc.sessao', JSON.stringify(s)); else localStorage.removeItem('qc.sessao'); } catch (e) { /* sem armazenamento: pede o PIN a cada abertura */ } };
+  E.sessao = lerSessao();                                          // o PIN nunca é guardado; só o código da sessão, que o computador renova a cada uso e que vence depois de alguns dias sem uso
 
   // pareamento pelo QR: guarda e limpa o endereço do histórico
   const par = Logica.lerHash(location.hash);
@@ -269,7 +269,7 @@ if (typeof document !== 'undefined') (function () {
       const id = Logica.novoId(); let r = null;
       if (await postar(id, { tipo: 'pin', pin })) r = await esperar(id, 45000); else msg.textContent = 'Sem internet.';
       $('pin').value = '';
-      if (r && r.ok && r.codigo) { E.sessao = { codigo: r.codigo, ate: Date.now() + (r.minutos || 30) * 60000 }; gravarSessao(E.sessao); msg.textContent = ''; }
+      if (r && r.ok && r.codigo) { E.sessao = { codigo: r.codigo, dur: r.minutos || 30, ate: Date.now() + (r.minutos || 30) * 60000 }; gravarSessao(E.sessao); msg.textContent = ''; }
       else if (msg.textContent !== 'Sem internet.') msg.textContent = Logica.motivoPin(r);
     } finally { E.ocupadoChat = false; $('pin-ok').disabled = false; desenhar(); }
   }
@@ -283,7 +283,7 @@ if (typeof document !== 'undefined') (function () {
       else {
         const r = await esperar(id, 50000);
         if (!r) final = 'O computador não respondeu. Ele pode estar desligado; o quadro continua funcionando na outra aba.';
-        else { respondeu = !r.sessaoInvalida && !!r.texto; E.chat = Logica.mesclar(E.chat, [r]); final = r.texto || ''; if (r.sessaoInvalida) { E.sessao = null; gravarSessao(null); } else { E.sessao.ate = Date.now() + 30 * 60000; gravarSessao(E.sessao); } }
+        else { respondeu = !r.sessaoInvalida && !!r.texto; E.chat = Logica.mesclar(E.chat, [r]); final = r.texto || ''; if (r.sessaoInvalida) { E.sessao = null; gravarSessao(null); } else { E.sessao.ate = Date.now() + (E.sessao.dur || 30) * 60000; gravarSessao(E.sessao); } }
       }
     } finally {
       E.chat = E.chat.map(b => (b.id === id ? { ...b, texto: b.estado === 'espera' ? final : b.texto, estado: 'ok', audio: respondeu ? 'esperando' : 'sem' } : b));
