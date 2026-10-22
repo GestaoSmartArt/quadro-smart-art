@@ -242,6 +242,7 @@ if (typeof document !== 'undefined') (function () {
     for (const b of E.chat) {
       const d = document.createElement('div'); d.className = 'bolha ' + b.de + (b.estado === 'espera' ? ' espera' : '');
       const q = document.createElement('span'); q.className = 'quem'; q.textContent = b.de === 'eu' ? 'Você' : 'Jarvis'; d.append(q, document.createTextNode(b.texto));
+      if (b.de === 'jarvis' && b.estado === 'ok' && b.audio === 'sem') { const bt = document.createElement('button'); bt.type = 'button'; bt.className = 'ouvir'; bt.textContent = '↻ Buscar a voz do Jarvis'; bt.onclick = () => { E.chat = E.chat.map(x => (x.id === b.id ? { ...x, audio: 'esperando' } : x)); desenhar(); buscarVoz(b.id, b.texto); }; d.append(bt); }
       if (b.de === 'jarvis' && b.estado === 'ok' && b.audio === 'esperando') { const v = document.createElement('span'); v.className = 'voz'; v.textContent = 'gerando a voz…'; d.append(v); }
       if (b.de === 'jarvis' && b.estado === 'ok' && b.audio === 'pronto' && E.audios[b.id]) {
         const bt = document.createElement('button'); bt.type = 'button'; bt.className = 'ouvir' + (E.tocando === b.id ? ' tocando' : ''); bt.textContent = E.tocando === b.id ? '■ Parar' : '▶ Ouvir a voz do Jarvis'; bt.onclick = () => tocar(b.id); d.append(bt);
