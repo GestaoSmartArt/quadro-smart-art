@@ -65,6 +65,7 @@ const Logica = {
   // ---- conversa com o Jarvis ----
   CHIPS: ['O que tenho hoje?', 'Vai chover hoje?', 'Quadro de hoje', 'Contas da semana', 'Quem começa amanhã?', 'Resumo do WhatsApp'],
   pinValido: p => /^[0-9]{4,8}$/.test(String(p || '')),
+  bytesDeBase64(b64) { const s = atob(String(b64 || '')), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; },
   motivoPin(r) {
     if (!r) return 'O computador não respondeu. Ele pode estar desligado ou sem internet.';
     if (r.ok) return '';
@@ -92,7 +93,7 @@ if (typeof document !== 'undefined') (function () {
   const guardar = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* modo privado: funciona sem lembrar */ } };
   const ler = (k, p) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : p; } catch (e) { return p; } };
   const E = { cfg: ler('qc.cfg', null), snap: ler('qc.snap', null), pend: ler('qc.pend', []), aplicadas: ler('qc.aplicadas', []), pcEm: ler('qc.pcEm', 0), aba: ler('qc.aba', 'hoje'), offset: 0, ocupado: false, instalar: null, ultimoOk: 0, falhou: false,
-    vista: ler('qc.vista', 'quadro'), chat: [], ouvindo: false, ocupadoChat: false };
+    vista: ler('qc.vista', 'quadro'), chat: [], ouvindo: false, ocupadoChat: false, audios: {}, tocando: null, player: null, aberto: null };
   const lerSessao = () => { try { return JSON.parse(sessionStorage.getItem('qc.sessao') || 'null'); } catch (e) { return null; } };
   const gravarSessao = s => { try { if (s) sessionStorage.setItem('qc.sessao', JSON.stringify(s)); else sessionStorage.removeItem('qc.sessao'); } catch (e) { /* sem sessionStorage: pede o PIN a cada abertura */ } };
   E.sessao = lerSessao();                                          // o PIN nunca é guardado; só o código da sessão (30 min), que some ao fechar a aba
@@ -166,7 +167,7 @@ if (typeof document !== 'undefined') (function () {
     if (LIMITE[E.aba]) { const p = document.createElement('p'); p.className = 'limite'; p.textContent = itens.length + ' de ' + LIMITE[E.aba] + ' (limite do método)'; lista.append(p); }
     if (!itens.length) { const v = document.createElement('div'); v.className = 'vazio'; v.textContent = E.snap ? 'Nada em ' + Logica.ROTULO[E.aba] + '.' : 'Esperando o Jarvis publicar o quadro…'; lista.append(v); }
     for (const c of itens) {
-      const bt = document.createElement('button'); bt.type = 'button'; bt.className = 'cartao' + (c.pendente ? ' pend' : '') + (E.aba === 'feito' ? ' feito' : '');
+      const bt = document.createElement('button'); bt.type = 'button'; bt.className = 'cartao' + (c.pendente ? ' pend' : '') + (E.aba === 'feito' ? ' feito' : '') + (E.aberto === c.id ? ' aberto' : '');
       const t = document.createElement('div'); t.className = 't'; t.textContent = c.texto; bt.append(t);
       if (c.motivo || c.pendente) { const m = document.createElement('div'); m.className = 'm'; m.textContent = c.motivo || ''; bt.append(m); }
       bt.onclick = () => abrirCartao(c.id); lista.append(bt);
@@ -179,12 +180,13 @@ if (typeof document !== 'undefined') (function () {
     $('folha').hidden = false; $('fundo').hidden = false; $('fundo').onclick = fechar;
     const f = corpo.querySelector('textarea, button'); if (f) setTimeout(() => f.focus(), 50);
   }
-  function fechar() { $('folha').hidden = true; $('fundo').hidden = true; }
+  function fechar() { $('folha').hidden = true; $('fundo').hidden = true; if (E.aberto) { E.aberto = null; desenhar(); } }
   function grupo(corpo, nome) { const g = document.createElement('div'); g.className = 'grupo'; g.textContent = nome; corpo.append(g); const l = document.createElement('div'); l.className = 'linha'; corpo.append(l); return l; }
   function botao(l, texto, fn, cls = '', off = false) { const b = document.createElement('button'); b.type = 'button'; b.className = 'acao ' + cls; b.textContent = texto; b.disabled = off; b.onclick = () => { fechar(); fn(); }; l.append(b); return b; }
 
   function abrirCartao(id) {
     const cols = Logica.visao(E.snap, E.pend, E.aplicadas), f = Logica.achar(cols, id); if (!f) return;
+    E.aberto = id; desenhar();                                       // o cartão aberto fica laranja (cor de "selecionado" no HUD)
     folha(f.cartao.texto, corpo => {
       const col = f.col, ids = cols[col].map(x => x.id), i = ids.indexOf(id);
       if (col !== 'feito') botao(grupo(corpo, 'Terminou?'), '✓ Concluir', () => acao({ tipo: 'concluir', id }), 'forte');
@@ -239,7 +241,12 @@ if (typeof document !== 'undefined') (function () {
     if (!E.chat.length) { const v = document.createElement('div'); v.className = 'vazio'; v.textContent = 'Pergunte algo ou toque numa sugestão. Eu consulto e anoto; o resto fica no computador.'; conv.append(v); }
     for (const b of E.chat) {
       const d = document.createElement('div'); d.className = 'bolha ' + b.de + (b.estado === 'espera' ? ' espera' : '');
-      const q = document.createElement('span'); q.className = 'quem'; q.textContent = b.de === 'eu' ? 'Você' : 'Jarvis'; d.append(q, document.createTextNode(b.texto)); conv.append(d);
+      const q = document.createElement('span'); q.className = 'quem'; q.textContent = b.de === 'eu' ? 'Você' : 'Jarvis'; d.append(q, document.createTextNode(b.texto));
+      if (b.de === 'jarvis' && b.estado === 'ok' && b.audio === 'esperando') { const v = document.createElement('span'); v.className = 'voz'; v.textContent = 'gerando a voz…'; d.append(v); }
+      if (b.de === 'jarvis' && b.estado === 'ok' && b.audio === 'pronto' && E.audios[b.id]) {
+        const bt = document.createElement('button'); bt.type = 'button'; bt.className = 'ouvir' + (E.tocando === b.id ? ' tocando' : ''); bt.textContent = E.tocando === b.id ? '■ Parar' : '▶ Ouvir a voz do Jarvis'; bt.onclick = () => tocar(b.id); d.append(bt);
+      }
+      conv.append(d);
     }
     window.scrollTo(0, document.body.scrollHeight);
   }
@@ -270,18 +277,45 @@ if (typeof document !== 'undefined') (function () {
     E.ocupadoChat = true; $('texto').value = '';
     const id = Logica.novoId();
     E.chat.push({ id: 'u' + id, de: 'eu', texto }, { id, de: 'jarvis', texto: 'Consultando o computador…', estado: 'espera' }); desenhar();
-    let final = '';
+    let final = '', respondeuTexto = false;
     try {
       if (!(await postar(id, { tipo: 'texto', texto: texto.slice(0, 300), sessao: E.sessao.codigo }))) final = 'Sem internet. Tente de novo.';
       else {
         const r = await esperar(id, 50000);
         if (!r) final = 'O computador não respondeu. Ele pode estar desligado; o quadro continua funcionando na outra aba.';
-        else { E.chat = Logica.mesclar(E.chat, [r]); final = r.texto || ''; if (r.sessaoInvalida) { E.sessao = null; gravarSessao(null); } else { E.sessao.ate = Date.now() + 30 * 60000; gravarSessao(E.sessao); } }
+        else { respondeuTexto = !r.sessaoInvalida && !!r.texto; E.chat = Logica.mesclar(E.chat, [r]); final = r.texto || ''; if (r.sessaoInvalida) { E.sessao = null; gravarSessao(null); } else { E.sessao.ate = Date.now() + 30 * 60000; gravarSessao(E.sessao); } }
       }
     } finally {
-      E.chat = E.chat.map(b => (b.id === id && b.estado === 'espera' ? { ...b, texto: final, estado: 'ok' } : b));
-      E.ocupadoChat = false; desenhar(); falar(final);
+      E.chat = E.chat.map(b => (b.id === id ? { ...b, texto: b.estado === 'espera' ? final : b.texto, estado: 'ok', audio: respondeuTexto ? 'esperando' : 'sem' } : b));
+      E.ocupadoChat = false; desenhar();
+      if (respondeuTexto) buscarVoz(id, final); else falar(final);
     }
+  }
+  // Voz do Jarvis: o computador gera o áudio com a voz de sempre e o manda pela ponte (alguns segundos depois do texto). Sem áudio a tempo, cai na voz do aparelho (só se "falar" estiver ligado).
+  async function buscarVoz(id, texto) {
+    const t0 = Date.now(); let ok = false;
+    while (Date.now() - t0 < 45000 && E.cfg) {
+      await new Promise(r => setTimeout(r, 2000));
+      const j = await pedir(null, '&chat=1');
+      if (j && (j.audios || []).includes(id)) {
+        const a = await pedir(null, '&a=audio&id=' + encodeURIComponent(id));
+        if (a && a.b64) { E.audios[id] = URL.createObjectURL(new Blob([Logica.bytesDeBase64(a.b64)], { type: a.mime || 'audio/mpeg' })); ok = true; }
+        break;
+      }
+    }
+    E.chat = E.chat.map(b => (b.id === id ? { ...b, audio: ok ? 'pronto' : 'sem' } : b));
+    if (E.vista === 'jarvis') desenhar();
+    if (ok && voz()) tocar(id); else if (!ok) falar(texto);
+  }
+  function tocar(id) {
+    try {
+      if (E.player) { E.player.pause(); E.player = null; }
+      if (E.tocando === id) { E.tocando = null; desenhar(); return; }
+      const url = E.audios[id]; if (!url) return;
+      const p = new Audio(url); E.player = p; E.tocando = id; desenhar();
+      p.onended = p.onerror = () => { if (E.tocando === id) { E.tocando = null; E.player = null; desenhar(); } };
+      p.play().catch(() => { E.tocando = null; desenhar(); aviso('Toque em "Ouvir a voz do Jarvis" para escutar.'); });
+    } catch (e) { E.tocando = null; }
   }
   $('v-quadro').onclick = () => { E.vista = 'quadro'; guardar('qc.vista', 'quadro'); desenhar(); };
   $('v-jarvis').onclick = () => { E.vista = 'jarvis'; guardar('qc.vista', 'jarvis'); desenhar(); };
